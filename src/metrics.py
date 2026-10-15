@@ -12,7 +12,8 @@ def daily_returns(prices: pd.DataFrame) -> pd.DataFrame:
 
 def annualised_return(returns: pd.Series) -> float:
     """
-    Compound annual growth rate of a return series.
+    Annualised return: the average daily return compounded over a year.
+    (An approximation of CAGR - it ignores volatility drag.)
     252 = approximate trading days in a year.
     """
     return (1 + returns.mean()) ** 252 - 1
@@ -34,8 +35,9 @@ def sharpe_ratio(returns: pd.Series, risk_free_rate: float = 0.05) -> float:
     """
     ann_return = annualised_return(returns)
     ann_vol = annualised_volatility(returns)
-    if ann_vol == 0:
-        return 0
+    # Constant returns give a std of ~1e-18, not exactly 0
+    if np.isclose(ann_vol, 0):
+        return 0.0
     return (ann_return - risk_free_rate) / ann_vol
 
 
@@ -78,7 +80,7 @@ def rolling_beta(stock_returns: pd.Series,
     idx = []
 
     # Align both series on the same dates
-    aligned = pd.concat([stock_returns, market_returns], axis=1).dropna()
+    aligned = pd.concat([stock_returns, market_returns], axis=1, sort=True).dropna()
     s = aligned.iloc[:, 0]
     m = aligned.iloc[:, 1]
 
@@ -144,11 +146,10 @@ def portfolio_diversification_score(corr_matrix: pd.DataFrame) -> float:
 
 
 if __name__ == "__main__":
-    from fetch import get_prices, get_benchmark
+    from src.fetch import get_prices, get_benchmark
 
     prices = get_prices()
-    benchmark = get_benchmark()
-    market_returns = benchmark.pct_change().dropna()
+    market_returns = get_benchmark().pct_change().dropna()
 
     summary = build_summary_table(prices, market_returns)
 

@@ -54,7 +54,7 @@ def rsi_signal(rsi_value: float) -> str:
 
 
 if __name__ == "__main__":
-    from fetch import get_prices
+    from src.fetch import get_prices
     prices = get_prices()
     for ticker in prices.columns:
         rsi = calc_rsi(prices[ticker]).iloc[-1]

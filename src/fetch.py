@@ -15,6 +15,8 @@ PORTFOLIO = {
     "BRK-B": 7,    # Berkshire Hathaway B
 }
 
+RAW_DIR = os.path.join("data", "raw")
+
 # Ticker and name
 TICKER_NAMES = {
     "AAPL":   "Apple",
@@ -28,7 +30,7 @@ TICKER_NAMES = {
     "BRK-B":  "Berkshire B",
 }
 
-def get_prices(period="1y", interval="1d"):
+def get_prices(period="1y", interval="1d", out_dir=RAW_DIR):
     """
     Download adjusted closing prices for all tickers.
     Returns a cleaned DataFrame with forward-fill for any missing days
@@ -38,23 +40,27 @@ def get_prices(period="1y", interval="1d"):
     raw = yf.download(tickers, period=period, interval=interval, auto_adjust=True)
     prices = raw["Close"].copy()
 
-    # Forward-fill gaps (different market holidays across US/UK/SG)
-    prices = prices.ffill().dropna(how="all")
+    # A ticker that failed to download entirely would otherwise wipe out every row below
+    prices = prices.dropna(axis=1, how="all")
 
-    # Drop any days where ALL prices are missing (e.g. global holidays)
-    prices = prices.dropna(how="all")
+    # Forward-fill gaps (different market holidays across US/UK/SG)
+    prices = prices.ffill()
+
+    # Drop leading rows where some tickers have no price yet (e.g. the London
+    # session opens before New York), otherwise they'd count as 0 in the total
+    prices = prices.dropna(how="any")
 
     # VUAG.L is priced in GBX (pence), convert to GBP for consistency
     if "VUAG.L" in prices.columns:
         prices["VUAG.L"] = prices["VUAG.L"] / 100
 
-    os.makedirs("data/raw", exist_ok=True)
-    prices.to_csv("data/raw/prices.csv")
+    os.makedirs(out_dir, exist_ok=True)
+    prices.to_csv(os.path.join(out_dir, "prices.csv"))
     print(f"✓ Downloaded {len(prices)} trading days for {len(tickers)} tickers")
     return prices
 
 
-def get_portfolio_value(prices):
+def get_portfolio_value(prices, out_dir=RAW_DIR):
     """
     Multiply each stock's price by your share count
     and sum to get total portfolio value per day.
@@ -63,16 +69,21 @@ def get_portfolio_value(prices):
     # Align columns — some tickers might have failed to download
     available = [t for t in shares.index if t in prices.columns]
     value = (prices[available] * shares[available]).sum(axis=1)
-    value.to_csv("data/raw/portfolio_value.csv")
+    os.makedirs(out_dir, exist_ok=True)
+    value.to_csv(os.path.join(out_dir, "portfolio_value.csv"))
     return value
 
 
 def get_benchmark(period="1y"):
     """
     Download SPY as a market benchmark for beta calculations.
+    Returns a Series (yfinance gives a one-column DataFrame for a single ticker).
     """
     spy = yf.download("SPY", period=period, auto_adjust=True)
-    return spy["Close"]
+    close = spy["Close"]
+    if isinstance(close, pd.DataFrame):
+        close = close.iloc[:, 0]
+    return close.rename("SPY")
 
 
 if __name__ == "__main__":

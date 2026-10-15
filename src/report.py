@@ -1,22 +1,31 @@
 import pandas as pd
 import os
 from datetime import datetime
-from fetch import get_prices, get_portfolio_value, get_benchmark, TICKER_NAMES
-from metrics import (daily_returns, build_summary_table,
-                     correlation_matrix, portfolio_diversification_score)
-from rsi import calc_rsi, rsi_signal
+from src.fetch import get_prices, get_portfolio_value, get_benchmark, TICKER_NAMES
+from src.metrics import build_summary_table
+from src.rsi import calc_rsi, rsi_signal
+
+
+def weekly_change(prices: pd.DataFrame, days: int = 5) -> pd.Series:
+    """
+    % change over the last `days` trading days for each ticker,
+    sorted from worst to best. Tickers with too little history are skipped.
+    """
+    changes = {}
+    for ticker in prices.columns:
+        p = prices[ticker].dropna()
+        if len(p) > days:
+            week_ago = p.iloc[-(days + 1)]
+            changes[ticker] = (p.iloc[-1] - week_ago) / week_ago
+    return pd.Series(changes, name="Weekly Change", dtype=float).sort_values()
 
 
 def generate_weekly_report():
     print("📥 Fetching data...")
     prices = get_prices(period="1y")
     portfolio = get_portfolio_value(prices)
-    benchmark = get_benchmark(period="1y")
-
-    # Extract SPY as a clean Series
-    spy = benchmark["SPY"] if "SPY" in benchmark.columns else benchmark.iloc[:, 0]
+    spy = get_benchmark(period="1y")
     market_returns = spy.pct_change().dropna()
-    returns = daily_returns(prices)
 
     today = datetime.today().strftime("%Y-%m-%d")
     os.makedirs("data/reports", exist_ok=True)
@@ -45,14 +54,7 @@ def generate_weekly_report():
     outperformance = portfolio_return - spy_return
 
     # ── Section 4: Weekly change for each stock ───────────────────────────
-    weekly_changes = {}
-    for ticker in prices.columns:
-        if len(prices[ticker].dropna()) >= 5:
-            week_ago = prices[ticker].dropna().iloc[-6]
-            today_price = prices[ticker].dropna().iloc[-1]
-            weekly_changes[ticker] = (today_price - week_ago) / week_ago
-
-    weekly_df = pd.Series(weekly_changes, name="Weekly Change").sort_values()
+    weekly_df = weekly_change(prices)
     weekly_df.to_csv(f"data/reports/weekly_change_{today}.csv")
 
     # ── Print the report ──────────────────────────────────────────────────
